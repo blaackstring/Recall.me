@@ -1,0 +1,51 @@
+{
+    "manifest_version": 3,
+    "name": "Recall.me",
+    "version": "1.0",
+    "description": "Capture, AI summarize, and semantically search your screenshots.",
+    "icons": {
+        "16": "icon-128.png",
+        "32": "icon-128.png",
+        "48": "icon-128.png",
+        "128": "icon-128.png"
+    },
+    "permissions": [
+        "activeTab",
+        "storage",
+        "tabs",
+        "desktopCapture",
+        "contextMenus",
+        "notifications"
+    ],
+    "commands": {
+        "capture-memory": {
+            "suggested_key": {
+                "default": "Ctrl+Shift+S"
+            },
+            "description": "Capture a memory of the current tab",
+            "global": true
+        }
+    },
+    "action": {
+        "default_popup": "index.html",
+        "default_icon": "icon-128.png"
+    },
+    "background": {
+        "service_worker": "src/background.js",
+        "type": "module"
+    },
+    "content_scripts": [
+        {
+            "matches": [
+                "<all_urls>"
+            ],
+            "js": [
+                "src/contentScript.js"
+            ]
+        }
+    ],
+    "host_permissions": [
+        "<all_urls>",
+        "http://localhost:3001/*"
+    ]
+}
