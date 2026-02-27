@@ -10,6 +10,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@datastax/astra-db-ts": "^2.1.2",
     "@supabase/supabase-js": "^2.97.0",
     "axios": "^1.13.5",
     "chokidar": "^5.0.0",

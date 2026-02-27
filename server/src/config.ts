@@ -11,8 +11,9 @@ dotenv.config(); // Default to current working directory
 
 export const config = {
     port: process.env.PORT || 3001,
-    supabaseUrl: process.env.SUPABASE_URL || "",
-    supabaseKey: process.env.SUPABASE_ANON_KEY || "",
+    astraToken: process.env.ASTRA_DB_TOKEN || "",
+    astraEndpoint: process.env.ASTRA_DB_API_ENDPOINT || "",
+    astraKeyspace: process.env.ASTRA_DB_KEYSPACE || "default_keyspace",
     awsRegion: process.env.AWS_REGION || "us-east-1",
     awsAccessKeyId: process.env.AWS_ACCESS_KEY_ID || "",
     awsSecretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || "",
@@ -22,6 +23,3 @@ export const config = {
 };
 
 // Validation
-if (!config.supabaseUrl || !config.supabaseKey) {
-    console.warn("WARNING: Supabase URL or Anon Key is missing in .env");
-}

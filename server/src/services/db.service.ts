@@ -1,40 +1,39 @@
-import { createClient } from "@supabase/supabase-js";
+import { DataAPIClient  } from "@datastax/astra-db-ts";
 import { config } from "../config.js";
 
-const supabaseUrl = config.supabaseUrl;
-const supabaseKey = config.supabaseKey;
+const client = new DataAPIClient(config.astraToken);
 
-export const supabase = createClient(supabaseUrl, supabaseKey);
+export const db = client.db(config.astraEndpoint);
 
-export const saveScreenshot = async (data: {
-    user_id: string;
-    image_url: string;
-    summary: string;
-    tags: string[];
-    embedding: number[];
-}) => {
-    const { data: result, error } = await supabase
-        .from("screenshots")
-        .insert([data]);
+export const collection = db.collection("screen_shot");
+  
+export const saveScreenshot = async (data:any) => {
 
-    if (error) {
-        throw error;
-    }
+    const result = await collection.insertOne({
+        user_id: data.user_id,
+        image_url: data.image_url,
+        summary: data.summary,
+        tags: data.tags,
+        $vector: data.embedding,  // ✅ reserved field for vector search
+        created_at: new Date()
+    });
+
     return result;
 };
 
-export const searchScreenshots = async (user_id: string, queryEmbedding: number[], limit = 20) => {
-    // We use Supabase RPC for vector search
-    // Need to create this function in Supabase SQL editor first
-    const { data, error } = await supabase.rpc("match_screenshots", {
-        query_embedding: queryEmbedding,
-        match_threshold: 0.5, // Lowered from 0.5 for better discovery
-        match_count: limit,
-        p_user_id: user_id
-    });
+export const searchScreenshots = async (user_id: any, queryEmbedding: any, limit = 20) => {
 
-    if (error) {
-        throw error;
-    }
-    return data;
+
+    const cursor = collection.find(
+        { user_id },
+        {
+            sort: { $vector: queryEmbedding },
+            limit: limit,
+        }
+    ).includeSimilarity(true);  
+
+    const results = await cursor.toArray();
+
+    const filtered = results.filter(r => (r.$similarity ?? 0) >= 0.5);
+    return filtered;
 };

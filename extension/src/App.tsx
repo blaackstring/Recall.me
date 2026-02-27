@@ -5,7 +5,8 @@ import { createClient } from '@supabase/supabase-js';
 import { ResultCard } from './ResultCard';
 import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
-
+import { DataAPIClient } from "@datastax/astra-db-ts";
+import Login from './Auth';
 // Supabase config
 const supabase = createClient(
   'https://eotndfctzhzrzkyestfg.supabase.co',
@@ -13,6 +14,13 @@ const supabase = createClient(
 );
 
 const API_BASE_URL = 'http://localhost:3001';
+
+
+// Initialize the client
+const client = new DataAPIClient(import.meta.env.VITE_ASTRA_DB_TOKEN);
+const db = client.db(import.meta.env.VITE_ASTRA_DB_URL, { keyspace: "default_keyspace" });
+
+
 
 interface Screenshot {
   id: string;
@@ -30,6 +38,12 @@ function App() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [isFullScreen, setIsFullScreen] = useState(false);
 
+  useEffect(()=>{
+    (async () => {
+  const colls = await db.listCollections();
+  console.log('Connected to AstraDB:', colls);
+})();
+  },[])
   useEffect(() => {
     // Detect if we are in full-screen mode (tab vs popup)
     setIsFullScreen(window.innerWidth > 600);
@@ -298,7 +312,23 @@ const handleCapture = async () => {
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           {!isFullScreen && (
-            <button
+           <div
+           style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+            ,flexDirection: 'row',
+            gap: '12px',
+            width: '100%',
+            height: '100%',
+            backgroundColor: 'rgba(255, 255, 255, 0.1)',
+            borderRadius: '12px',
+            padding: '8px',
+            transition: 'all 200ms',
+            cursor: 'pointer'
+           }}
+           >
+             <button
               onClick={openFullScreen}
               title="Open Full Screen"
               style={{
@@ -315,6 +345,8 @@ const handleCapture = async () => {
             >
               <Maximize2 size={16} />
             </button>
+            <Login />
+           </div>
           )}
           <button
             onClick={() => supabase.auth.signOut()}
