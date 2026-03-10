@@ -1,26 +1,14 @@
 import { useState, useEffect } from 'react';
-import { Camera, Search, Loader2, LogOut, Maximize2, } from 'lucide-react';
+import { Camera, Search, Loader2, LogOut, Maximize2 } from 'lucide-react';
 import axios from 'axios';
-import { createClient } from '@supabase/supabase-js';
 import { ResultCard } from './ResultCard';
 import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
-import { DataAPIClient } from "@datastax/astra-db-ts";
-import Login from './Auth';
-// Supabase config
-const supabase = createClient(
-  'https://eotndfctzhzrzkyestfg.supabase.co',
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVvdG5kZmN0emh6cnpreWVzdGZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTcxNDE2OTksImV4cCI6MjA3MjcxNzY5OX0.toIFc50uBuSb0rFQ5-XPK90oha1AettVbWALvRlSDQo'
-);
+import Auth from './Auth';
+import { onFirebaseAuthChanged, firebaseSignOut } from './auth.service';
+import type { User } from 'firebase/auth';
 
-const API_BASE_URL = 'http://localhost:3001';
-
-
-// Initialize the client
-const client = new DataAPIClient(import.meta.env.VITE_ASTRA_DB_TOKEN);
-const db = client.db(import.meta.env.VITE_ASTRA_DB_URL, { keyspace: "default_keyspace" });
-
-
+const API_BASE_URL = 'http://13.232.183.4:3001';
 
 interface Screenshot {
   id: string;
@@ -31,80 +19,52 @@ interface Screenshot {
 }
 
 function App() {
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState<User | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [results, setResults] = useState<Screenshot[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isFullScreen, setIsFullScreen] = useState(false);
 
-  useEffect(()=>{
-    (async () => {
-  const colls = await db.listCollections();
-  console.log('Connected to AstraDB:', colls);
-})();
-  },[])
+  // ─── Firebase Auth listener ──────────────────────────────────
   useEffect(() => {
-    // Detect if we are in full-screen mode (tab vs popup)
     setIsFullScreen(window.innerWidth > 600);
 
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user) {
-        setUser(session.user);
-      } else {
-        // Bypass login for testing: Use a mock user ID
-        setUser({ id: '00000000-0000-0000-0000-000000000000', email: 'test@example.com' });
-      }
+    const unsubscribe = onFirebaseAuthChanged((firebaseUser) => {
+      setUser(firebaseUser);
+      setAuthLoading(false);
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (session?.user) {
-        setUser(session.user);
-      }
-    });
-
-    return () => subscription.unsubscribe();
+    return () => unsubscribe();
   }, []);
 
-  // Initial search when user is loaded
+  // ─── Initial search when user available ───────────────────────
   useEffect(() => {
     if (user) {
       handleSearch();
     }
   }, [user]);
+
+  // ─── PrintScreen listener ────────────────────────────────────
   useEffect(() => {
     const handleKeyUp = (e: KeyboardEvent) => {
-      console.log("KeyUp:", e.key, e.code);
-
       if (e.key === "PrintScreen" || e.code === "PrintScreen" || e.keyCode === 44) {
         console.log("PrintScreen pressed");
       }
     };
-
     window.addEventListener("keyup", handleKeyUp);
     return () => window.removeEventListener("keyup", handleKeyUp);
   }, []);
 
+  // ─── Background → UI toast bridge ───────────────────────────
   useEffect(() => {
-    if (typeof chrome === 'undefined' || !chrome.runtime?.onMessage) {
-      return;
-    }
+    if (typeof chrome === 'undefined' || !chrome.runtime?.onMessage) return;
 
     const handleBackgroundToast = (message: any) => {
-      if (message?.action !== "backgroundCaptureToast" || typeof message.message !== "string") {
-        return;
-      }
-
-      if (message.level === "success") {
-        toast.success(message.message);
-        return;
-      }
-
-      if (message.level === "error") {
-        toast.error(message.message);
-        return;
-      }
-
+      if (message?.action !== "backgroundCaptureToast" || typeof message.message !== "string") return;
+      if (message.level === "success") { toast.success(message.message); return; }
+      if (message.level === "error") { toast.error(message.message); return; }
       toast.info(message.message);
     };
 
@@ -112,31 +72,8 @@ function App() {
     return () => chrome.runtime.onMessage.removeListener(handleBackgroundToast);
   }, []);
 
-  const handleLogin = async () => {
-    const email = prompt('Enter your email');
-    if (!email) return;
-
-    setLoading(true);
-    try {
-      const redirectUrl = typeof chrome !== 'undefined' && chrome.identity
-        ? chrome.identity.getRedirectURL()
-        : window.location.origin;
-
-      const { error } = await supabase.auth.signInWithOtp({
-        email,
-        options: { emailRedirectTo: redirectUrl }
-      });
-
-      if (error) alert(`Login failed: ${error.message}`);
-      else alert(`Check your email!`);
-    } catch (err: any) {
-      alert(`Error: ${err.message}`);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-const handleCapture = async () => {
+  // ─── Capture screenshot ─────────────────────────────────────
+  const handleCapture = async () => {
     if (!user) return alert('Please login first');
     if (typeof chrome === 'undefined' || !chrome.runtime || !chrome.runtime.sendMessage) {
       return alert('Extension error: Please open this from the Chrome menu, not as a website.');
@@ -151,35 +88,35 @@ const handleCapture = async () => {
             const blob = await res.blob();
             const formData = new FormData();
             formData.append('screenshot', blob, 'screenshot.png');
-            formData.append('userId', user.id);
+            formData.append('userId', user.uid);
 
             await axios.post(`${API_BASE_URL}/process-screenshot`, formData);
-            alert('Memory Captured!');
+            toast.success('Memory Captured!');
             handleSearch();
           } catch (apiError: any) {
             const msg = apiError.response?.data?.error || apiError.message;
-            alert(`Backend Error: ${msg}`);
+            toast.error(`Backend Error: ${msg}`);
           }
         } else {
-          alert('Failed to capture screenshot');
+          toast.error('Failed to capture screenshot');
         }
         setIsProcessing(false);
       });
     } catch (error) {
-      alert('Error processing screenshot');
+      toast.error('Error processing screenshot');
       setIsProcessing(false);
     }
   };
 
+  // ─── Search ─────────────────────────────────────────────────
   const handleSearch = async () => {
     if (!user) return;
     setLoading(true);
     try {
       const { data } = await axios.post(`${API_BASE_URL}/search`, {
         query: searchQuery || "show all",
-        userId: user.id
+        userId: user.uid
       });
-      console.log(data)
       setResults(data.results || []);
     } catch (error) {
       console.error(error);
@@ -196,8 +133,37 @@ const handleCapture = async () => {
     }
   };
 
+  const handleSignOut = async () => {
+    try {
+      await firebaseSignOut();
+      setUser(null);
+      setResults([]);
+    } catch (err) {
+      console.error("Sign out failed:", err);
+    }
+  };
+
   const displayedResults = searchQuery ? results : results.slice(0, 5);
 
+  // ─── Loading state ──────────────────────────────────────────
+  if (authLoading) {
+    return (
+      <div
+        style={{
+          backgroundColor: '#09090b',
+          color: 'white',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          minHeight: '500px',
+        }}
+      >
+        <Loader2 className="animate-spin" color="rgba(255, 255, 255, 0.5)" size={32} />
+      </div>
+    );
+  }
+
+  // ─── Login screen ───────────────────────────────────────────
   if (!user) {
     return (
       <div
@@ -240,32 +206,17 @@ const handleCapture = async () => {
           lineHeight: 1.625,
           fontSize: '14px'
         }}>Your semantic visual memory. Capture once, find forever.</p>
-        <button
-          onClick={handleLogin}
-          style={{
-            width: '100%',
-            backgroundColor: 'white',
-            color: 'black',
-            fontWeight: 700,
-            padding: '14px',
-            borderRadius: '12px',
-            transition: 'all 200ms',
-            boxShadow: '0 10px 15px -3px rgba(255, 255, 255, 0.1)',
-            cursor: 'pointer',
-            border: 'none',
-          }}
-          onMouseOver={(e) => e.currentTarget.style.backgroundColor = '#e4e4e7'}
-          onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'white'}
-          onMouseDown={(e) => e.currentTarget.style.transform = 'scale(0.98)'}
-          onMouseUp={(e) => e.currentTarget.style.transform = 'scale(1)'}
-        >
-          Get Started
-        </button>
+
+        <div style={{ width: '100%', maxWidth: '320px' }}>
+          <Auth />
+        </div>
+
         <ToastContainer position="bottom-right" autoClose={2500} theme="dark" />
       </div>
     );
   }
 
+  // ─── Main app (authenticated) ───────────────────────────────
   return (
     <div
       style={{
@@ -311,24 +262,24 @@ const handleCapture = async () => {
           }}>Recall.me</span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          {/* User avatar & email */}
+          {user.photoURL && (
+            <img
+              src={user.photoURL}
+              alt="avatar"
+              style={{
+                width: '28px',
+                height: '28px',
+                borderRadius: '50%',
+                border: '2px solid rgba(255, 255, 255, 0.2)',
+              }}
+            />
+          )}
+          {isFullScreen && user.email && (
+            <span style={{ color: '#a1a1aa', fontSize: '13px' }}>{user.email}</span>
+          )}
           {!isFullScreen && (
-           <div
-           style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center'
-            ,flexDirection: 'row',
-            gap: '12px',
-            width: '100%',
-            height: '100%',
-            backgroundColor: 'rgba(255, 255, 255, 0.1)',
-            borderRadius: '12px',
-            padding: '8px',
-            transition: 'all 200ms',
-            cursor: 'pointer'
-           }}
-           >
-             <button
+            <button
               onClick={openFullScreen}
               title="Open Full Screen"
               style={{
@@ -345,11 +296,9 @@ const handleCapture = async () => {
             >
               <Maximize2 size={16} />
             </button>
-            <Login />
-           </div>
           )}
           <button
-            onClick={() => supabase.auth.signOut()}
+            onClick={handleSignOut}
             title="Sign Out"
             style={{
               padding: '8px',
@@ -368,7 +317,7 @@ const handleCapture = async () => {
         </div>
       </header>
 
-      {/* Hero Section (only when not searching) */}
+      {/* Hero Section (fullscreen, no active search) */}
       {!searchQuery && isFullScreen && (
         <section style={{ padding: '64px 24px', textAlign: 'center' }}>
           <h2 style={{

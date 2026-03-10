@@ -1,8 +1,16 @@
 /// <reference types="chrome" />
 
-const API_BASE_URL = 'http://localhost:3001';
-const GUEST_USER_ID = '00000000-0000-0000-0000-000000000000';
+const API_BASE_URL = 'http://13.232.183.4:3001';
 const NOTIFICATION_ICON_URL = chrome.runtime.getURL("icon-128.png");
+
+/**
+ * Get the authenticated Firebase user's UID from chrome.storage.local.
+ * Returns null if no user is signed in.
+ */
+async function getAuthUserId(): Promise<string | null> {
+    const result = await chrome.storage.local.get("firebaseUser") as { firebaseUser?: { uid: string } };
+    return result.firebaseUser?.uid || null;
+}
 
 function sendToastToUi(level: "info" | "success" | "error", message: string) {
     chrome.runtime.sendMessage(
@@ -88,9 +96,18 @@ async function base64ToBlob(base64: string): Promise<Blob> {
 // Helper: Generic upload function 
 async function uploadScreenshotBlob(blob: Blob) {
     try {
+        const userId = await getAuthUserId();
+        if (!userId) {
+            const msg = "Please sign in to capture memories.";
+            showNotification("Not Signed In", msg);
+            sendToastToUi("error", msg);
+            sendToastToPage(msg);
+            return;
+        }
+
         const formData = new FormData();
         formData.append('screenshot', blob, 'screenshot.png');
-        formData.append('userId', GUEST_USER_ID);
+        formData.append('userId', userId);
 
         const uploadRes = await fetch(`${API_BASE_URL}/process-screenshot`, {
             method: 'POST',

@@ -10,6 +10,9 @@
   "keywords": [],
   "author": "",
   "type": "module",
+  "plasmo": {
+    "permissions": ["identity"]
+  },
   "license": "ISC",
   "description": "",
   "dependencies": {

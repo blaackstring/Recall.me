@@ -11,9 +11,9 @@
   },
   "dependencies": {
     "@datastax/astra-db-ts": "^2.1.2",
-    "@supabase/supabase-js": "^2.97.0",
     "axios": "^1.13.5",
     "chokidar": "^5.0.0",
+    "firebase": "^12.10.0",
     "lucide-react": "^0.575.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
