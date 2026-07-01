@@ -47,3 +47,31 @@ body {
 .glass-card {
   @apply bg-zinc-900/50 backdrop-blur-md border border-zinc-800 hover:border-zinc-700 transition-all;
 }
+
+/* Glowing Upgrade Button */
+@keyframes upgrade-glow {
+  0% { box-shadow: 0 0 5px rgba(255, 255, 255, 0.1), 0 0 10px rgba(255, 255, 255, 0.05); }
+  50% { box-shadow: 0 0 15px rgba(255, 255, 255, 0.2), 0 0 25px rgba(255, 255, 255, 0.1); }
+  100% { box-shadow: 0 0 5px rgba(255, 255, 255, 0.1), 0 0 10px rgba(255, 255, 255, 0.05); }
+}
+
+.upgrade-btn-glow {
+  animation: upgrade-glow 3s infinite ease-in-out;
+  background: white !important;
+  color: black !important;
+  border: none;
+  font-weight: 700;
+  padding: 6px 14px;
+  border-radius: 99px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.upgrade-btn-glow:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 0 20px rgba(255, 255, 255, 0.4);
+}

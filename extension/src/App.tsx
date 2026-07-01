@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Camera, Search, Loader2, LogOut, Maximize2 } from 'lucide-react';
+import { Camera, Search, Loader2, LogOut, Maximize2, Sparkles, X, Check } from 'lucide-react';
 import axios from 'axios';
 import { ResultCard } from './ResultCard';
 import { ToastContainer, toast } from 'react-toastify';
@@ -8,7 +8,8 @@ import Auth from './Auth';
 import { onFirebaseAuthChanged, firebaseSignOut } from './auth.service';
 import type { User } from 'firebase/auth';
 
-const API_BASE_URL = 'http://13.232.183.4:3001';
+// const API_BASE_URL = 'http://13.232.183.4:3001';
+const API_BASE_URL = 'http://localhost:3001';
 
 interface Screenshot {
   id: string;
@@ -26,6 +27,8 @@ function App() {
   const [results, setResults] = useState<Screenshot[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isFullScreen, setIsFullScreen] = useState(false);
+  const [showPlans, setShowPlans] = useState(false);
+  const [paymentLoading, setPaymentLoading] = useState<string | null>(null);
 
   // ─── Firebase Auth listener ──────────────────────────────────
   useEffect(() => {
@@ -37,6 +40,55 @@ function App() {
     });
 
     return () => unsubscribe();
+  }, []);
+
+  // ─── Payment Session Handler ─────────────────────────────────
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const sessionId = params.get('session_id');
+    const orderId = params.get('order_id');
+    const plan = params.get('plan') || 'basic';
+    
+    if (sessionId) {
+      const initCheckout = async () => {
+        // @ts-ignore
+        if (window.Cashfree) {
+          // @ts-ignore
+          const cashfree = window.Cashfree({
+            mode: "production",
+          });
+          
+          try {
+            const result = await cashfree.checkout({
+              paymentSessionId: sessionId,
+              redirectTarget: "popup",
+            });
+
+            if (result?.paymentDetails) {
+              try {
+                const verifyRes = await axios.get(`${API_BASE_URL}/payment/verify/${orderId}?plan=${plan}`);
+                if (verifyRes.data?.success) {
+                  toast.success('🎉 Payment Successful! Subscription activated.');
+                } else {
+                  toast.error('Payment could not be verified. Contact support.');
+                }
+              } catch {
+                toast.error('Verification failed. Contact support.');
+              }
+            } else {
+              toast.error('Payment was not completed.');
+            }
+          } catch (err) {
+            console.error('Checkout error:', err);
+            toast.error('Payment failed. Please try again.');
+          }
+        } else {
+          setTimeout(initCheckout, 500);
+        }
+      };
+      
+      initCheckout();
+    }
   }, []);
 
   // ─── Initial search when user available ───────────────────────
@@ -90,12 +142,23 @@ function App() {
             formData.append('screenshot', blob, 'screenshot.png');
             formData.append('userId', user.uid);
 
-            await axios.post(`${API_BASE_URL}/process-screenshot`, formData);
-            toast.success('Memory Captured!');
+            const result = await axios.post(`${API_BASE_URL}/process-screenshot`, formData);
+
+            // Show warning if last capture
+            if (result.data.warning) {
+              toast.warning(result.data.warning);
+            } else {
+              toast.success(`Memory Captured! (${result.data.remaining} left)`);
+            }
             handleSearch();
           } catch (apiError: any) {
-            const msg = apiError.response?.data?.error || apiError.message;
-            toast.error(`Backend Error: ${msg}`);
+            if (apiError.response?.data?.error === 'limit_exhausted') {
+              toast.error(apiError.response.data.message);
+              setShowPlans(true); // Auto-open upgrade modal
+            } else {
+              const msg = apiError.response?.data?.error || apiError.message;
+              toast.error(`Backend Error: ${msg}`);
+            }
           }
         } else {
           toast.error('Failed to capture screenshot');
@@ -140,6 +203,36 @@ function App() {
       setResults([]);
     } catch (err) {
       console.error("Sign out failed:", err);
+    }
+  };
+
+  const handlePayment = async (planId: 'BASIC' | 'STANDARD' | 'PREMIUM') => {
+    if (!user) return toast.error("Please login first");
+    
+    setPaymentLoading(planId);
+    try {
+      const { data } = await axios.post(`${API_BASE_URL}/payment/create-order`, {
+        planId,
+        customer_details: {
+          customer_id: user.uid,
+          customer_name: user.displayName || "User",
+          customer_email: user.email || "example@gmail.com",
+          customer_phone: "9999999999", // Placeholder or from user profile if available
+        },
+        order_meta: {}
+      });
+
+      if (data.payment_session_id) {
+        // Pass session_id, order_id and planId so verify can activate the right plan
+        const checkoutUrl = chrome.runtime.getURL(`index.html?session_id=${data.payment_session_id}&order_id=${data.order_id}&plan=${planId.toLowerCase()}`);
+        chrome.tabs.create({ url: checkoutUrl });
+        setShowPlans(false);
+      }
+    } catch (error: any) {
+      console.error(error);
+      toast.error(error.response?.data?.error || "Payment failed to initialize");
+    } finally {
+      setPaymentLoading(null);
     }
   };
 
@@ -278,6 +371,15 @@ function App() {
           {isFullScreen && user.email && (
             <span style={{ color: '#a1a1aa', fontSize: '13px' }}>{user.email}</span>
           )}
+          
+          <button 
+            onClick={() => setShowPlans(true)}
+            className="upgrade-btn-glow"
+          >
+            <Sparkles size={14} />
+            Upgrade
+          </button>
+
           {!isFullScreen && (
             <button
               onClick={openFullScreen}
@@ -521,10 +623,113 @@ function App() {
           backgroundColor: 'rgba(0, 0, 0, 0.4)',
           backdropFilter: 'blur(12px)'
         }}>
-          Made with ❤️ by Antigravity AI
+      <a href='https://www.linkedin.com/in/mohd-shahan-siddiqui-669a16253/' target="_blank" rel="noopener noreferrer" style={{ color: '#52525b', textDecoration: 'none' }}>
+        Made by Shahan siddiqui
+      </a>
         </footer>
       )}
       <ToastContainer position="bottom-right" autoClose={2500} theme="dark" />
+
+      {/* Plans Modal */}
+      {showPlans && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.8)',
+          backdropFilter: 'blur(8px)',
+          zIndex: 100,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '24px'
+        }}>
+          <div style={{
+            backgroundColor: '#09090b',
+            border: '1px solid rgba(255, 255, 255, 0.1)',
+            borderRadius: '24px',
+            width: '100%',
+            maxWidth: '500px',
+            position: 'relative',
+            overflow: 'hidden',
+            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)'
+          }}>
+            <button 
+              onClick={() => setShowPlans(false)}
+              style={{
+                position: 'absolute',
+                top: '16px',
+                right: '16px',
+                color: '#a1a1aa',
+                backgroundColor: 'transparent',
+                border: 'none',
+                cursor: 'pointer'
+              }}
+            >
+              <X size={20} />
+            </button>
+
+            <div style={{ padding: '32px' }}>
+              <h2 style={{ fontSize: '24px', fontWeight: 800, marginBottom: '8px', textAlign: 'center' }}>Upgrade Your Memory</h2>
+              <p style={{ color: '#a1a1aa', textAlign: 'center', marginBottom: '32px', fontSize: '14px' }}>Choose a plan that fits your digital brain.</p>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                {[
+                  { id: 'BASIC', name: 'Basic', price: '99', desc: 'Sync across 2 devices' },
+                  { id: 'STANDARD', name: 'Standard', price: '149', desc: 'Sync across 5 devices' },
+                  { id: 'PREMIUM', name: 'Premium', price: '199', desc: 'Unlimited everything' }
+                ].map((plan) => (
+                  <div key={plan.id} style={{
+                    padding: '20px',
+                    borderRadius: '16px',
+                    border: '1px solid rgba(255, 255, 255, 0.08)',
+                    backgroundColor: 'rgba(255, 255, 255, 0.02)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    transition: 'all 200ms'
+                  }}>
+                    <div>
+                      <div style={{ fontWeight: 700, fontSize: '16px' }}>{plan.name}</div>
+                      <div style={{ color: '#71717a', fontSize: '13px' }}>{plan.desc}</div>
+                    </div>
+                    <div style={{ textAlign: 'right', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      <span style={{ fontWeight: 800, fontSize: '18px' }}>₹{plan.price}</span>
+                      <button 
+                        onClick={() => handlePayment(plan.id as any)}
+                        disabled={!!paymentLoading}
+                        style={{
+                          backgroundColor: 'white',
+                          color: 'black',
+                          border: 'none',
+                          padding: '8px 16px',
+                          borderRadius: '8px',
+                          fontWeight: 700,
+                          fontSize: '13px',
+                          cursor: 'pointer',
+                          minWidth: '80px'
+                        }}
+                      >
+                        {paymentLoading === plan.id ? <Loader2 className="animate-spin" size={14} /> : 'Select'}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            
+            <div style={{ 
+              padding: '16px', 
+              borderTop: '1px solid rgba(255, 255, 255, 0.05)', 
+              textAlign: 'center',
+              backgroundColor: 'rgba(255, 255, 255, 0.01)'
+            }}>
+              <p style={{ color: '#52525b', fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+                <Check size={12} /> Secure payments by Cashfree
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

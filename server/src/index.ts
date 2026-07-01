@@ -3,17 +3,20 @@ import cors from "cors";
 import multer from "multer";
 import { processScreenshot, handleSearch } from "./controllers/screenshot.controller.js";
 import { config } from "./config.js";
+import authRoutes from "./routes/auth.routes.js";
+import paymentRoutes from "./routes/payment.routes.js";
 
 const app = express();
 const port = config.port;
 
-// Multer setup for memory storage (we'll pass the buffer to S3 and AI services)
 const upload = multer({ storage: multer.memoryStorage() });
 
 app.use(cors());
 app.use(express.json());
 
-// Routes
+app.use("/auth", authRoutes);
+app.use("/payment", paymentRoutes);
+
 app.post("/process-screenshot", upload.single("screenshot"), processScreenshot);
 app.post("/search", handleSearch);
 

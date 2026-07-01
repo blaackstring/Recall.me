@@ -1,0 +1,2 @@
+﻿src/routes/auth.routes.ts(2,52): error TS2307: Cannot find module './auth.controller.js' or its corresponding type declarations.
+src/services/ai.service.ts(55,9): error TS2353: Object literal may only specify known properties, and 'outputDimensionality' does not exist in type '(string | Part)[] | EmbedContentRequest'.

@@ -11,24 +11,33 @@
   "author": "",
   "type": "module",
   "plasmo": {
-    "permissions": ["identity"]
+    "permissions": [
+      "identity"
+    ]
   },
   "license": "ISC",
   "description": "",
   "dependencies": {
     "@aws-sdk/client-s3": "^3.995.0",
+    "@cognee/cognee-ts": "^0.1.2",
     "@datastax/astra-db-ts": "^2.1.2",
     "@google/generative-ai": "^0.24.1",
     "@supabase/supabase-js": "^2.97.0",
+    "bcryptjs": "^3.0.3",
+    "cashfree-pg": "^5.1.0",
     "cors": "^2.8.6",
     "dotenv": "^17.3.1",
     "express": "^5.2.1",
+    "firebase-admin": "^13.7.0",
+    "jsonwebtoken": "^9.0.3",
     "multer": "^2.0.2",
     "uuid": "^13.0.0"
   },
   "devDependencies": {
+    "@types/bcryptjs": "^3.0.0",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
+    "@types/jsonwebtoken": "^9.0.10",
     "@types/multer": "^2.0.0",
     "@types/node": "^25.3.0",
     "@types/uuid": "^11.0.0",

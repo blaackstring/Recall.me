@@ -1,10 +1,39 @@
-import { GoogleAuthProvider, signInWithCredential, signOut, onAuthStateChanged, type User } from "firebase/auth";
+import {
+  GoogleAuthProvider,
+  createUserWithEmailAndPassword,
+  onAuthStateChanged,
+  signInWithCredential,
+  signInWithEmailAndPassword,
+  signOut,
+  updateProfile,
+  type User,
+} from "firebase/auth";
 import { auth } from "./firebase";
 
 // ─── Google OAuth Client ID ────────────────────────────────────
 // This is the *Chrome app* (or *Web client*) OAuth 2.0 Client ID from Google Cloud Console.
 // It MUST match the one configured in Firebase → Authentication → Sign-in method → Google.
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+
+const API_BASE_URL = 'http://13.232.183.4:3001';
+
+type StoredFirebaseUser = {
+  uid: string;
+  email: string | null;
+  displayName: string | null;
+  photoURL: string | null;
+};
+
+async function persistUserToChromeStorage(user: User): Promise<void> {
+  const storedUser: StoredFirebaseUser = {
+    uid: user.uid,
+    email: user.email,
+    displayName: user.displayName,
+    photoURL: user.photoURL,
+  };
+
+  await chrome.storage.local.set({ firebaseUser: storedUser });
+}
 
 /**
  * Sign in with Google using chrome.identity.launchWebAuthFlow.
@@ -57,14 +86,7 @@ export async function signInWithGoogle(): Promise<User> {
           const user = userCredential.user;
 
           // Persist user info in chrome.storage so background service worker can access it
-          await chrome.storage.local.set({
-            firebaseUser: {
-              uid: user.uid,
-              email: user.email,
-              displayName: user.displayName,
-              photoURL: user.photoURL,
-            },
-          });
+          await persistUserToChromeStorage(user);
 
           resolve(user);
         } catch (err) {
@@ -73,6 +95,24 @@ export async function signInWithGoogle(): Promise<User> {
       }
     );
   });
+}
+
+export async function signInWithEmailPassword(email: string, password: string): Promise<User> {
+  const userCredential = await signInWithEmailAndPassword(auth, email, password);
+  await persistUserToChromeStorage(userCredential.user);
+  return userCredential.user;
+}
+
+export async function signUpWithEmailPassword(email: string, password: string, displayName?: string): Promise<User> {
+  const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+
+  const trimmedName = displayName?.trim();
+  if (trimmedName) {
+    await updateProfile(userCredential.user, { displayName: trimmedName });
+  }
+
+  await persistUserToChromeStorage(userCredential.user);
+  return userCredential.user;
 }
 
 /**
@@ -91,14 +131,7 @@ export function onFirebaseAuthChanged(callback: (user: User | null) => void): ()
   return onAuthStateChanged(auth, async (user) => {
     if (user) {
       // Keep chrome.storage in sync
-      await chrome.storage.local.set({
-        firebaseUser: {
-          uid: user.uid,
-          email: user.email,
-          displayName: user.displayName,
-          photoURL: user.photoURL,
-        },
-      });
+      await persistUserToChromeStorage(user);
     }
     callback(user);
   });
@@ -108,7 +141,54 @@ export function onFirebaseAuthChanged(callback: (user: User | null) => void): ()
  * Gets the currently persisted user from chrome.storage.local.
  * Useful for the background service worker which can't use the Firebase auth listener.
  */
-export async function getStoredUser(): Promise<{ uid: string; email: string; displayName: string; photoURL: string } | null> {
-  const result = await chrome.storage.local.get("firebaseUser") as { firebaseUser?: { uid: string; email: string; displayName: string; photoURL: string } };
+export async function getStoredUser(): Promise<StoredFirebaseUser | null> {
+  const result = await chrome.storage.local.get("firebaseUser") as { firebaseUser?: StoredFirebaseUser };
   return result.firebaseUser || null;
+}
+
+/**
+ * Request a password reset code (OTP).
+ */
+export async function sendForgotPasswordCode(email: string): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/auth/forgot-password`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email }),
+  });
+  
+  const contentType = response.headers.get("content-type");
+  if (contentType && contentType.includes("application/json")) {
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || "Failed to send reset code");
+    }
+  } else {
+    // If it's not JSON, it's likely an HTML 404/500 page
+    const text = await response.text();
+    console.error("Non-JSON response from server:", text);
+    throw new Error(`Server error (${response.status}). If testing locally, ensure API_BASE_URL is correct.`);
+  }
+}
+
+/**
+ * Reset password using the verification code.
+ */
+export async function resetPasswordWithCode(email: string, code: string, newPassword: string): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/auth/reset-password`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, code, newPassword }),
+  });
+
+  const contentType = response.headers.get("content-type");
+  if (contentType && contentType.includes("application/json")) {
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || "Failed to reset password");
+    }
+  } else {
+    const text = await response.text();
+    console.error("Non-JSON response from server:", text);
+    throw new Error(`Server error (${response.status}). Ensure your backend is running and routes are updated.`);
+  }
 }

@@ -20,6 +20,15 @@ export const config = {
     awsBucketName: process.env.AWS_S3_BUCKET_NAME || "",
     geminiApiKey: process.env.GEMINI_API_KEY || "",
     cloudfrontUrl: process.env.CLOUDFRONT_URL || "",
+
+    // Firebase Admin
+    firebaseProjectId: process.env.FIREBASE_PROJECT_ID || "",
+    firebaseServiceAccountKey: process.env.FIREBASE_SERVICE_ACCOUNT_KEY || "",
+
+    // Cashfree
+    cashfreeClientId: process.env.CASHFREE_CLIENT_ID || "",
+    cashfreeClientSecret: process.env.CASHFREE_CLIENT_SECRET || "",
+    cashfreeEnv: (process.env.CASHFREE_ENV || "SANDBOX") as "SANDBOX" | "PRODUCTION",
 };
 
 // Validation

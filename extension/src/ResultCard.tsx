@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ExternalLink, Calendar, Eye, Image as ImageIcon } from "lucide-react";
+import { ExternalLink, Calendar, Eye, Image as ImageIcon, Copy, Check } from "lucide-react";
 
 export interface Screenshot {
   id: string;
@@ -17,10 +17,11 @@ interface ResultCardProps {
 export function ResultCard({ item, index }: ResultCardProps) {
   const [expanded, setExpanded] = useState(false);
   const [imgError, setImgError] = useState(false);
+  const [copied, setCopied] = useState(false);
 
-  // Hover states for inline styling
   const [isCardHovered, setIsCardHovered] = useState(false);
   const [isLinkHovered, setIsLinkHovered] = useState(false);
+  const [isCopyHovered, setIsCopyHovered] = useState(false);
   const [isViewHovered, setIsViewHovered] = useState(false);
 
   const date = new Date(item.created_at);
@@ -29,6 +30,14 @@ export function ResultCard({ item, index }: ResultCardProps) {
 
   const visibleTags = item.tags.slice(0, 3);
   const extraCount = item.tags.length - visibleTags.length;
+
+  const handleCopyLink = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    navigator.clipboard.writeText(item.image_url).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
 
   return (
     <div
@@ -86,35 +95,75 @@ export function ResultCard({ item, index }: ResultCardProps) {
           #{index + 1}
         </div>
 
-        {/* Top Right Action (External Link) */}
-        <button
-          onMouseEnter={(e) => { e.stopPropagation(); setIsLinkHovered(true); }}
-          onMouseLeave={(e) => { e.stopPropagation(); setIsLinkHovered(false); }}
-          onClick={(e) => { e.stopPropagation(); window.open(item.image_url, "_blank"); }}
-          title="Open Original Image"
-          style={{
-            position: "absolute",
-            top: "12px",
-            right: "12px",
-            zIndex: 20,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            width: "32px",
-            height: "32px",
-            borderRadius: "9999px",
-            backgroundColor: isLinkHovered ? "rgba(255, 255, 255, 0.1)" : "rgba(0, 0, 0, 0.4)",
-            backdropFilter: "blur(12px)",
-            WebkitBackdropFilter: "blur(12px)",
-            border: "1px solid rgba(255, 255, 255, 0.1)",
-            color: isLinkHovered ? "white" : "rgba(255, 255, 255, 0.7)",
-            opacity: isCardHovered ? 1 : 0,
-            transition: "all 300ms ease",
-            cursor: "pointer"
-          }}
-        >
-          <ExternalLink size={14} />
-        </button>
+        {/* Top Right Actions */}
+        <div style={{
+          position: "absolute",
+          top: "12px",
+          right: "12px",
+          zIndex: 20,
+          display: "flex",
+          gap: "8px",
+          opacity: isCardHovered ? 1 : 0,
+          transition: "opacity 300ms ease",
+        }}>
+          {/* Copy Link Button */}
+          <button
+            onMouseEnter={(e) => { e.stopPropagation(); setIsCopyHovered(true); }}
+            onMouseLeave={(e) => { e.stopPropagation(); setIsCopyHovered(false); }}
+            onClick={handleCopyLink}
+            title="Copy Image Link"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: "5px",
+              height: "32px",
+              padding: "0 10px",
+              borderRadius: "9999px",
+              backgroundColor: copied
+                ? "rgba(74, 222, 128, 0.15)"
+                : isCopyHovered ? "rgba(255, 255, 255, 0.1)" : "rgba(0, 0, 0, 0.4)",
+              backdropFilter: "blur(12px)",
+              WebkitBackdropFilter: "blur(12px)",
+              border: copied
+                ? "1px solid rgba(74, 222, 128, 0.4)"
+                : "1px solid rgba(255, 255, 255, 0.1)",
+              color: copied ? "#4ade80" : isCopyHovered ? "white" : "rgba(255, 255, 255, 0.7)",
+              transition: "all 300ms ease",
+              cursor: "pointer",
+              fontSize: "11px",
+              fontWeight: 500,
+            }}
+          >
+            {copied ? <Check size={13} /> : <Copy size={13} />}
+            <span>{copied ? "Copied!" : "Copy Link"}</span>
+          </button>
+
+          {/* External Link Button */}
+          <button
+            onMouseEnter={(e) => { e.stopPropagation(); setIsLinkHovered(true); }}
+            onMouseLeave={(e) => { e.stopPropagation(); setIsLinkHovered(false); }}
+            onClick={(e) => { e.stopPropagation(); window.open(item.image_url, "_blank"); }}
+            title="Open Original Image"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              width: "32px",
+              height: "32px",
+              borderRadius: "9999px",
+              backgroundColor: isLinkHovered ? "rgba(255, 255, 255, 0.1)" : "rgba(0, 0, 0, 0.4)",
+              backdropFilter: "blur(12px)",
+              WebkitBackdropFilter: "blur(12px)",
+              border: "1px solid rgba(255, 255, 255, 0.1)",
+              color: isLinkHovered ? "white" : "rgba(255, 255, 255, 0.7)",
+              transition: "all 300ms ease",
+              cursor: "pointer"
+            }}
+          >
+            <ExternalLink size={14} />
+          </button>
+        </div>
 
         {/* Image */}
         {imgError ? (
