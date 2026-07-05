@@ -1,165 +1,60 @@
-# Recall.me
+# Recall.me - Your Semantic Visual Memory
 
-Recall.me is a Chrome extension + backend service that captures screenshots, runs AI analysis, stores embeddings, and lets you search previous captures semantically.
+Recall.me is an advanced Chrome Extension and backend service that acts as your personal "digital brain". It allows you to seamlessly capture screenshots of tabs you are browsing, automatically analyzes their content, and makes them semantically searchable. Instead of searching by exact filenames or dates, you can search by concepts, topics, or even feelings.
 
-## What This Project Does
+## 🚀 What is Working
+- **Tab Capture**: Instantly capture the visible area of your current browser tab with a single click.
+- **AI Vision Analysis**: Uses LLMs (Gemini/OpenAI) to extract detailed summaries, tags, and context from your screenshots.
+- **Dual-Brain Memory Architecture**:
+  - **Fast Brain (AstraDB)**: Instantly saves your screenshot and its semantic embedding vector. Powers the "Library" tab for lightning-fast semantic search.
+  - **Deep Brain (Cognee)**: Asynchronously maps your screenshots into a relational Knowledge Graph, linking entities and concepts across your memories.
+- **Visual Memory Agent (Agent Mode)**: A LangGraph-powered conversational agent that can reason over your memories, answer complex questions, and intelligently fall back to AstraDB if graph indexing is still processing.
+- **Authentication**: Secure Google Authentication powered by Firebase.
+- **Payment & Subscriptions**: Cashfree integration to manage user plan limits (Free, Basic, Standard, Premium).
 
-1. Capture current browser tab (button, context menu, or hotkey).
-2. Upload image to backend.
-3. Backend uploads image to S3.
-4. Backend uses Gemini to generate:
-   - summary
-   - tags
-   - embedding vector (768 dims)
-5. Backend stores metadata + embedding in Supabase.
-6. Search uses embedding similarity (`match_screenshots` RPC) to return relevant memories.
+## 🏗️ Architecture
 
-## Repository Structure
+The project is split into two main components: the Chrome Extension (Frontend) and the Node.js Server (Backend).
 
-```
-Recall.me/
-  extension/            # Chrome extension (React + Vite + MV3)
-  server/               # Express + TypeScript backend
-  supabase_setup.sql    # DB schema + vector search function
-```
+### 1. Frontend (Chrome Extension)
+- **Tech Stack**: React, TypeScript, Vite, Lucide Icons.
+- **Features**:
+  - Injected UI popup with a modern, glassmorphic design.
+  - Dual-tab interface: **Library** (for manual search and grid view) and **Agent** (for chat-based memory retrieval).
+  - Background Service Worker to handle print-screen events and bridge communication between the browser tab and the API.
 
-## Tech Stack
+### 2. Backend (Node.js/Express)
+- **Tech Stack**: Express, TypeScript, LangGraph, Cognee, AstraDB (DataStax), AWS S3.
+- **Core Pipelines**:
+  - `/process-screenshot`: 
+    1. Uploads the raw image to an AWS S3 bucket (served via CloudFront).
+    2. Runs AI Vision analysis to generate a rich description and tags.
+    3. Generates vector embeddings for the text.
+    4. Writes the data simultaneously to **AstraDB** (Vector Store) and **Cognee** (Relational Graph Store).
+  - `/search`:
+    - **Query Mode**: Performs a semantic vector search in AstraDB.
+    - **Chat Mode**: Invokes a LangGraph workflow. The agent evaluates the user's question, determines which tool to use, and queries Cognee. If Cognee throws a 404 (because it is still processing), a smart fallback kicks in to retrieve data from AstraDB natively.
 
-- Extension: React, TypeScript, Vite, Chrome Extension Manifest V3
-- Backend: Node.js, Express, TypeScript, Multer
-- AI: Google Gemini (`gemini-2.5-flash`, `gemini-embedding-001`)
-- Storage: AWS S3 (+ optional CloudFront URL)
-- Database: Supabase Postgres + pgvector
+## 🧠 The Agent Workflow (LangGraph)
+The Agent relies on a state machine built with LangGraph:
+1. **Input**: User asks a question (e.g., "Find my AWS bill").
+2. **Tool Selection**: The LLM determines it needs to search the user's visual memory and calls the `recall_tool`.
+3. **Execution & Fallback**: The `recall_tool` pings Cognee's graph endpoints. If Cognee is still indexing the background job, it falls back to a Vector Similarity Search in AstraDB.
+4. **Structured Output**: The workflow catches the resulting data, natively parses the image URLs and metadata, and returns a structured conversational answer alongside the actual image cards.
 
-## Prerequisites
+## 🛠️ Setup Instructions
 
-- Node.js `20.19+` recommended (Vite 7 warns on lower versions)
-- npm
-- Chrome/Edge (for extension testing)
-- Supabase project with SQL access
-- AWS S3 bucket credentials
-- Gemini API key
+### Extension
+1. Navigate to the `extension` folder.
+2. Run `npm install` and `npm run build`.
+3. Go to `chrome://extensions` in your browser.
+4. Enable "Developer Mode" and click "Load unpacked", selecting the `extension/dist` folder.
 
-## Environment Variables
+### Server
+1. Navigate to the `server` folder.
+2. Add your `.env` file (AstraDB, AWS, OpenAI, Gemini, Firebase, Cognee, Cashfree keys).
+3. Run `npm install`.
+4. Run `npm run dev` to start the backend on port 3001.
 
-### Backend (`server/.env`)
-
-Create `server/.env`:
-
-```env
-PORT=3001
-SUPABASE_URL=
-SUPABASE_ANON_KEY=
-AWS_ACCESS_KEY_ID=
-AWS_SECRET_ACCESS_KEY=
-AWS_REGION=us-east-1
-AWS_S3_BUCKET_NAME=
-GEMINI_API_KEY=
-CLOUDFRONT_URL=
-```
-
-Notes:
-- `CLOUDFRONT_URL` is optional. If empty, direct S3 URL is returned.
-- `SUPABASE_ANON_KEY` and `SUPABASE_URL` are required for DB operations.
-
-### Extension (`extension/.env`)
-
-Current UI code in `extension/src/App.tsx` uses hardcoded Supabase values.
-`extension/.env` exists but is not currently wired into `App.tsx`.
-
-If you want to use env values, migrate to:
-- `import.meta.env.VITE_SUPABASE_URL`
-- `import.meta.env.VITE_SUPABASE_ANON_KEY`
-
-## Supabase Setup
-
-Run `supabase_setup.sql` in Supabase SQL editor:
-
-- enables `pgvector`
-- creates `screenshots` table
-- enables RLS policies
-- creates `match_screenshots(...)` vector search function
-
-Important:
-- Table currently references `auth.users(id)`.
-- If you use the hardcoded guest user id (`00000000-0000-0000-0000-000000000000`), inserts can fail unless that user exists or you relax schema/policies for local testing.
-
-## Local Development
-
-## 1) Install dependencies
-
-```bash
-cd server
-npm install
-
-cd ../extension
-npm install
-```
-
-## 2) Start backend
-
-```bash
-cd server
-npm run dev
-```
-
-Backend endpoints:
-- `POST /process-screenshot`
-- `POST /search`
-- `GET /health`
-
-## 3) Build extension
-
-```bash
-cd extension
-npm run build
-```
-
-## 4) Load extension in Chrome
-
-1. Open `chrome://extensions`
-2. Enable Developer Mode
-3. Click `Load unpacked`
-4. Select `extension/dist`
-5. Optional: open `chrome://extensions/shortcuts` and set `capture-memory`
-
-## Usage
-
-### Capture
-
-You can capture by:
-- Extension UI button (`Capture This Tab`)
-- Context menu (`Recall This Page`)
-- Command shortcut (`capture-memory`, default `Ctrl+Shift+S`)
-- Content script fallback hotkeys on normal pages
-- Paste image into page (`Ctrl+V`) to upload clipboard image
-
-
-## Search fails with `TypeError: fetch failed` / timeout
-
-Likely cause:
-- network or DNS issue reaching Supabase
-
-Checks:
-1. Verify `SUPABASE_URL` and `SUPABASE_ANON_KEY`
-2. Test domain reachability from your machine
-3. Retry on different network or DNS resolver
-
-## Useful Commands
-
-```bash
-# backend
-cd server
-npm run dev
-
-# extension build
-cd extension
-npm run build
-```
-
-## Future Improvements
-
-- Move extension Supabase config fully to env vars
-- Add proper authenticated user flow end-to-end (no guest UUID fallback)
-- Add tests (API + extension message flow)
-- Add retry/backoff for backend network calls
+---
+*Built to ensure you never lose a fleeting thought or an important webpage ever again.*

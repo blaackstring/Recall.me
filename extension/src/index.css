@@ -75,3 +75,83 @@ body {
   transform: translateY(-1px);
   box-shadow: 0 0 20px rgba(255, 255, 255, 0.4);
 }
+
+/* Agent Markdown Styles */
+.agent-markdown p {
+  margin: 0 0 12px 0;
+  color: #e9d5ff;
+}
+
+.agent-markdown h1, .agent-markdown h2, .agent-markdown h3 {
+  color: white;
+  font-weight: 600;
+}
+
+.agent-markdown ul, .agent-markdown ol {
+  margin: 8px 0;
+  padding-left: 24px;
+}
+
+.agent-markdown li {
+  margin: 4px 0;
+}
+
+.agent-markdown code {
+  background-color: rgba(168, 85, 247, 0.2);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 13px;
+  color: #d8b4fe;
+  font-family: 'Fira Code', monospace;
+}
+
+.agent-markdown pre {
+  background-color: rgba(0, 0, 0, 0.3);
+  padding: 12px;
+  border-radius: 8px;
+  overflow-x: auto;
+  margin: 8px 0;
+}
+
+.agent-markdown pre code {
+  background-color: transparent;
+  padding: 0;
+  font-size: 13px;
+}
+
+.agent-markdown img {
+  max-width: 100%;
+  border-radius: 8px;
+  margin: 8px 0;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.agent-markdown blockquote {
+  border-left: 3px solid #a78bfa;
+  padding-left: 12px;
+  margin: 8px 0;
+  color: #d4d4d8;
+}
+
+.agent-markdown table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 8px 0;
+}
+
+.agent-markdown th, .agent-markdown td {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 8px;
+  text-align: left;
+}
+
+.agent-markdown th {
+  background-color: rgba(255, 255, 255, 0.05);
+  font-weight: 600;
+}
+
+/* Toast markdown */
+.toast-markdown p {
+  margin: 4px 0;
+  font-size: 14px;
+}

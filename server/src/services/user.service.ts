@@ -1,6 +1,6 @@
 import bcrypt from "bcryptjs";
 import { v4 as uuidv4 } from "uuid";
-import { db } from "./db.service.js";
+import { db, subscriptionCollection } from "./db.service.js";
 
 // ─── Users Collection (AstraDB) ────────────────────────────────
 const usersCollection = db.collection("users");
@@ -102,4 +102,54 @@ export async function updateUserPassword(email: string, password: string) {
         { email },
         { $set: { password: hashedPassword } }
     );
+}
+
+// ─── Gmail OAuth Tokens ──────────────────────────────────────────
+
+export interface GmailTokens {
+    access_token: string;
+    refresh_token: string;
+    scope: string;
+    token_type: string;
+    expiry_date: number;
+}
+
+/**
+ * Save Gmail OAuth tokens for a user.
+ */
+export async function saveGmailTokens(uid: string, tokens: GmailTokens) {
+    await subscriptionCollection.updateOne(
+        { user_id: uid },
+        { $set: { gmail_tokens: tokens, gmail_connected_at: new Date() } },
+        { upsert: true }
+    );
+    console.log(`[Gmail] Tokens saved for user ${uid}`);
+}
+
+/**
+ * Get Gmail OAuth tokens for a user.
+ */
+export async function getGmailTokens(uid: string): Promise<GmailTokens | null> {
+    const sub = await subscriptionCollection.findOne({ user_id: uid });
+    if (!sub || !sub.gmail_tokens) return null;
+    return sub.gmail_tokens as GmailTokens;
+}
+
+/**
+ * Remove Gmail OAuth tokens for a user (disconnect).
+ */
+export async function removeGmailTokens(uid: string) {
+    await subscriptionCollection.updateOne(
+        { user_id: uid },
+        { $unset: { gmail_tokens: "", gmail_connected_at: "" } }
+    );
+    console.log(`[Gmail] Tokens removed for user ${uid}`);
+}
+
+/**
+ * Check if a user has Gmail connected.
+ */
+export async function isGmailConnected(uid: string): Promise<boolean> {
+    const sub = await subscriptionCollection.findOne({ user_id: uid });
+    return !!(sub && sub.gmail_tokens);
 }

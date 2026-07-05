@@ -1,6 +1,6 @@
 /// <reference types="chrome" />
 
-const API_BASE_URL = 'http://13.232.183.4:3001';
+const API_BASE_URL = 'http://localhost:3001';
 const NOTIFICATION_ICON_URL = chrome.runtime.getURL("icon-128.png");
 
 /**

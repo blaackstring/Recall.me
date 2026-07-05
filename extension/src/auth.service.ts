@@ -15,7 +15,7 @@ import { auth } from "./firebase";
 // It MUST match the one configured in Firebase → Authentication → Sign-in method → Google.
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
 
-const API_BASE_URL = 'http://13.232.183.4:3001';
+const API_BASE_URL = 'http://localhost:3001';
 
 type StoredFirebaseUser = {
   uid: string;
@@ -191,4 +191,129 @@ export async function resetPasswordWithCode(email: string, code: string, newPass
     console.error("Non-JSON response from server:", text);
     throw new Error(`Server error (${response.status}). Ensure your backend is running and routes are updated.`);
   }
+}
+
+// ─── Gmail OAuth ────────────────────────────────────────────────
+
+const GMAIL_SCOPES = "https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.compose";
+
+/**
+ * Connect Gmail via OAuth.
+ *
+ * Flow:
+ * 1. Get the OAuth client ID from the backend
+ * 2. Open Google OAuth consent screen with Gmail scopes
+ * 3. Extract the authorization code from the redirect
+ * 4. Send the code to the backend to exchange for tokens
+ */
+export async function connectGmail(): Promise<void> {
+  // 1. Get client ID from backend
+  const token = await getAuthToken();
+  const configRes = await fetch(`${API_BASE_URL}/gmail/config`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  if (!configRes.ok) {
+    const err = await configRes.json();
+    throw new Error(err.error || "Failed to get Gmail config");
+  }
+
+  const { clientId } = await configRes.json();
+
+  // 2. Open OAuth flow
+  return new Promise((resolve, reject) => {
+    const redirectUrl = chrome.identity.getRedirectURL();
+
+    const authUrl = new URL("https://accounts.google.com/o/oauth2/v2/auth");
+    authUrl.searchParams.set("client_id", clientId);
+    authUrl.searchParams.set("redirect_uri", redirectUrl);
+    authUrl.searchParams.set("response_type", "code");
+    authUrl.searchParams.set("scope", GMAIL_SCOPES);
+    authUrl.searchParams.set("access_type", "offline");
+    authUrl.searchParams.set("prompt", "consent");
+
+    chrome.identity.launchWebAuthFlow(
+      { url: authUrl.toString(), interactive: true },
+      async (responseUrl) => {
+        if (chrome.runtime.lastError || !responseUrl) {
+          return reject(new Error(chrome.runtime.lastError?.message || "Gmail OAuth flow cancelled"));
+        }
+
+        try {
+          // 3. Extract authorization code
+          const url = new URL(responseUrl);
+          const code = url.searchParams.get("code");
+
+          if (!code) {
+            return reject(new Error("No authorization code received from Google"));
+          }
+
+          // 4. Send code to backend
+          const authToken = await getAuthToken();
+          const connectRes = await fetch(`${API_BASE_URL}/gmail/connect`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${authToken}`,
+            },
+            body: JSON.stringify({ code, redirectUri: redirectUrl }),
+          });
+
+          const data = await connectRes.json();
+
+          if (!connectRes.ok) {
+            throw new Error(data.error || data.details || "Failed to connect Gmail");
+          }
+
+          resolve();
+        } catch (err) {
+          reject(err);
+        }
+      }
+    );
+  });
+}
+
+/**
+ * Check if Gmail is connected for the current user.
+ */
+export async function getGmailStatus(): Promise<boolean> {
+  try {
+    const token = await getAuthToken();
+    const res = await fetch(`${API_BASE_URL}/gmail/status`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    if (!res.ok) return false;
+    const data = await res.json();
+    return data.connected === true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Disconnect Gmail for the current user.
+ */
+export async function disconnectGmail(): Promise<void> {
+  const token = await getAuthToken();
+  const res = await fetch(`${API_BASE_URL}/gmail/disconnect`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  if (!res.ok) {
+    const data = await res.json();
+    throw new Error(data.error || "Failed to disconnect Gmail");
+  }
+}
+
+/**
+ * Helper: get the JWT auth token for API calls.
+ * Uses the Firebase ID token from the current user.
+ */
+async function getAuthToken(): Promise<string> {
+  const user = auth.currentUser;
+  if (!user) throw new Error("Not authenticated");
+  return await user.getIdToken();
 }

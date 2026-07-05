@@ -22,6 +22,10 @@
     "@cognee/cognee-ts": "^0.1.2",
     "@datastax/astra-db-ts": "^2.1.2",
     "@google/generative-ai": "^0.24.1",
+    "@langchain/core": "^1.2.1",
+    "@langchain/google-genai": "^2.2.0",
+    "@langchain/langgraph": "^1.4.7",
+    "@langchain/openai": "^1.5.3",
     "@supabase/supabase-js": "^2.97.0",
     "bcryptjs": "^3.0.3",
     "cashfree-pg": "^5.1.0",
@@ -29,9 +33,11 @@
     "dotenv": "^17.3.1",
     "express": "^5.2.1",
     "firebase-admin": "^13.7.0",
+    "googleapis": "^173.0.0",
     "jsonwebtoken": "^9.0.3",
     "multer": "^2.0.2",
-    "uuid": "^13.0.0"
+    "uuid": "^13.0.0",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/bcryptjs": "^3.0.0",
@@ -44,5 +50,8 @@
     "ts-node-dev": "^2.0.0",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3"
+  },
+  "optionalDependencies": {
+    "@cognee/neon-win32-x64-msvc": "^0.1.3"
   }
 }

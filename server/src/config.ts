@@ -4,10 +4,12 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-// Try loading from current dir and root dir
-dotenv.config({ path: resolve(__dirname, ".env") });
-dotenv.config({ path: resolve(__dirname, "../.env") });
-dotenv.config(); // Default to current working directory
+// Force override system env with values from .env files — prevents stale OS-level env vars
+dotenv.config({ path: resolve(__dirname, ".env"), override: true });
+dotenv.config({ path: resolve(__dirname, "../.env"), override: true });
+dotenv.config({ override: true }); // Default to current working directory
+
+console.log("[config] AstraDB Endpoint:", process.env.ASTRA_DB_API_ENDPOINT?.substring(0, 40) + "...");
 
 export const config = {
     port: process.env.PORT || 3001,
@@ -29,6 +31,10 @@ export const config = {
     cashfreeClientId: process.env.CASHFREE_CLIENT_ID || "",
     cashfreeClientSecret: process.env.CASHFREE_CLIENT_SECRET || "",
     cashfreeEnv: (process.env.CASHFREE_ENV || "SANDBOX") as "SANDBOX" | "PRODUCTION",
+
+    // Gmail OAuth (for MCP integration)
+    gmailClientId: process.env.GMAIL_CLIENT_ID || "",
+    gmailClientSecret: process.env.GMAIL_CLIENT_SECRET || "",
 };
 
 // Validation

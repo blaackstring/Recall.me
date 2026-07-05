@@ -1,7 +1,17 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { config } from "../config.js";
+import { ChatOpenAI } from "@langchain/openai";
 
 const genAI = new GoogleGenerativeAI(config.geminiApiKey);
+
+import { OpenAIEmbeddings } from "@langchain/openai";
+
+const embeddings = new OpenAIEmbeddings({
+  apiKey: process.env.OPENAI_TOKEN,
+  batchSize: 512,
+  model: "text-embedding-3-small",
+  dimensions: 768
+});
 
 export interface ScreenshotAnalysis {
     summary: string;
@@ -13,10 +23,20 @@ export const analyzeImage = async (imageBuffer: Buffer, mimeType: string): Promi
     const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
     const prompt = `
-    Analyze this screenshot and provide:
-    1. A short summary (2 lines).
-    2. A list of 5-15 relevant tags.
-    3. A category classification (e.g., Web Development, Social Media, Documentation, UI Design, etc.).
+    Analyze this screenshot in EXTREME detail. Your goal is to make it highly searchable for a user later.
+    
+    1. SUMMARY (3-5 sentences): Describe the visual context, but MUST explicitly extract and include:
+       - Any exact Email Addresses, Phone Numbers, or contact details.
+       - Specific YouTube channel names, video titles, or user handles (e.g. @username).
+       - Prominent text, brands, product names, error messages, or code snippets visible on screen.
+       - If it's a social media/video page, include the creator's name and exact topic.
+       
+    2. TAGS (10-20 tags): 
+       - Include specific entities (e.g., "React", "Hostinger", "John Doe").
+       - Include data types present (e.g., "phone number", "email", "invoice", "code").
+       - Include broad categories (e.g., "Web Development", "Entertainment").
+
+    3. CATEGORY: A single broad classification (e.g., Social Media, Development, Finance, Communication).
 
     Return the result strictly as a JSON object with the following structure:
     {
@@ -49,10 +69,13 @@ export const analyzeImage = async (imageBuffer: Buffer, mimeType: string): Promi
 };
 
 export const generateEmbedding = async (text: string): Promise<number[]> => {
-    const model = genAI.getGenerativeModel({ model: "gemini-embedding-001" });
-    const result = await model.embedContent({
-        content: { parts: [{ text }], role: "user" },
-        outputDimensionality: 768,
-    });
-    return result.embedding.values;
+    // const model = genAI.getGenerativeModel({ model: "gemini-embedding-2", });
+    // const result = await model.embedContent({
+    //     content: { parts: [{ text }], role: "user" },
+    //         outputDimensionality: 768,
+
+    // });
+
+    const result=await embeddings.embedQuery(text);
+    return result;
 };

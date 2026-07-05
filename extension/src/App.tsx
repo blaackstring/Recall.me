@@ -1,11 +1,13 @@
-import { useState, useEffect } from 'react';
-import { Camera, Search, Loader2, LogOut, Maximize2, Sparkles, X, Check } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { Camera, Search, Loader2, LogOut, Maximize2, Sparkles, X, Check, Bot, Plus, Mail, Unlink, Network } from 'lucide-react';
 import axios from 'axios';
+import Markdown from 'react-markdown';
 import { ResultCard } from './ResultCard';
+import { GraphView } from './GraphView';
 import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import Auth from './Auth';
-import { onFirebaseAuthChanged, firebaseSignOut } from './auth.service';
+import { onFirebaseAuthChanged, firebaseSignOut, connectGmail, getGmailStatus, disconnectGmail } from './auth.service';
 import type { User } from 'firebase/auth';
 
 // const API_BASE_URL = 'http://13.232.183.4:3001';
@@ -19,6 +21,14 @@ interface Screenshot {
   created_at: string;
 }
 
+interface ChatMessage {
+  id: string;
+  query: string;
+  answer?: string;
+  results?: Screenshot[];
+  isLoading?: boolean;
+}
+
 function App() {
   const [user, setUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
@@ -29,6 +39,13 @@ function App() {
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [showPlans, setShowPlans] = useState(false);
   const [paymentLoading, setPaymentLoading] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'library' | 'agent' | 'graph'>('agent');
+  const [sessionId, setSessionId] = useState<string | undefined>();
+  const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
+  const [gmailConnected, setGmailConnected] = useState(false);
+  const [gmailLoading, setGmailLoading] = useState(false);
+  const [showConnectMenu, setShowConnectMenu] = useState(false);
+  const connectMenuRef = useRef<HTMLDivElement>(null);
 
   // ─── Firebase Auth listener ──────────────────────────────────
   useEffect(() => {
@@ -94,7 +111,9 @@ function App() {
   // ─── Initial search when user available ───────────────────────
   useEffect(() => {
     if (user) {
-      handleSearch();
+      // handleSearch();
+      // Check Gmail connection status
+      getGmailStatus().then(setGmailConnected).catch(() => setGmailConnected(false));
     }
   }, [user]);
 
@@ -107,6 +126,17 @@ function App() {
     };
     window.addEventListener("keyup", handleKeyUp);
     return () => window.removeEventListener("keyup", handleKeyUp);
+  }, []);
+
+  // ─── Close connect menu on outside click ─────────────────────
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (connectMenuRef.current && !connectMenuRef.current.contains(e.target as Node)) {
+        setShowConnectMenu(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
   // ─── Background → UI toast bridge ───────────────────────────
@@ -174,15 +204,66 @@ function App() {
   // ─── Search ─────────────────────────────────────────────────
   const handleSearch = async () => {
     if (!user) return;
+    if (!searchQuery.trim() && activeTab === 'agent') return;
+
     setLoading(true);
+    const currentQuery = searchQuery || "show all";
+    const messageId = Date.now().toString();
+
+    if (activeTab === 'agent') {
+      setChatHistory(prev => [...prev, { id: messageId, query: currentQuery, isLoading: true }]);
+      setSearchQuery('');
+    }
+
     try {
+      // Always use Agent mode (chatMode) — query mode removed
       const { data } = await axios.post(`${API_BASE_URL}/search`, {
-        query: searchQuery || "show all",
-        userId: user.uid
+        query: currentQuery,
+        userId: user.uid,
+        mode: 'chatMode',
+        sessionId
       });
-      setResults(data.results || []);
+
+      if (data.results) {
+        setSessionId(data.results.sessionId);
+        const mappedResults: Screenshot[] = (data.results.structuredResponse || [])
+          .filter((r: any) => r.imageUrl)
+          .map((r: any, idx: number) => ({
+            id: `agent-${messageId}-${idx}`,
+            image_url: r.imageUrl,
+            summary: r.description,
+            tags: r.tags || [],
+            created_at: new Date().toISOString()
+        }));
+
+        if (activeTab === 'agent') {
+          setChatHistory(prev => prev.map(msg => 
+            msg.id === messageId 
+              ? { ...msg, isLoading: false, answer: data.results.answer, results: mappedResults } 
+              : msg
+          ));
+        } else {
+          // Library/Graph tabs: show results as cards
+          setResults(mappedResults);
+          const answer = data.results?.answer;
+          if (answer && typeof answer === 'string' && answer.trim()) {
+            toast.info(
+              <div style={{ maxWidth: '400px' }}>
+                <Markdown>{answer}</Markdown>
+              </div>,
+              { autoClose: 8000 }
+            );
+          }
+        }
+      }
     } catch (error) {
       console.error(error);
+      toast.error('Search failed.');
+      if (activeTab === 'agent') {
+         setChatHistory(prev => prev.map(msg => 
+            msg.id === messageId ? { ...msg, isLoading: false, answer: "I'm sorry, I encountered an error while searching your memory." } : msg
+         ));
+      }
     } finally {
       setLoading(false);
     }
@@ -201,8 +282,40 @@ function App() {
       await firebaseSignOut();
       setUser(null);
       setResults([]);
+      setGmailConnected(false);
     } catch (err) {
       console.error("Sign out failed:", err);
+    }
+  };
+
+  // ─── Gmail Connection Handlers ──────────────────────────────
+  const handleConnectGmail = async () => {
+    setGmailLoading(true);
+    setShowConnectMenu(false);
+    try {
+      await connectGmail();
+      setGmailConnected(true);
+      toast.success("Gmail connected! Your agent can now search emails.");
+    } catch (err: any) {
+      if (!err.message?.includes("cancelled") && !err.message?.includes("closed")) {
+        toast.error(err.message || "Failed to connect Gmail");
+      }
+    } finally {
+      setGmailLoading(false);
+    }
+  };
+
+  const handleDisconnectGmail = async () => {
+    setGmailLoading(true);
+    setShowConnectMenu(false);
+    try {
+      await disconnectGmail();
+      setGmailConnected(false);
+      toast.success("Gmail disconnected.");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to disconnect Gmail");
+    } finally {
+      setGmailLoading(false);
     }
   };
 
@@ -446,7 +559,73 @@ function App() {
         </section>
       )}
 
-      {/* UI Controls */}
+      {/* Tab Switcher */}
+      <div style={{
+        display: 'flex',
+        borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+        backgroundColor: 'rgba(0, 0, 0, 0.2)'
+      }}>
+        {/* <button
+          onClick={() => setActiveTab('library')}
+          style={{
+            flex: 1,
+            padding: '16px',
+            backgroundColor: activeTab === 'library' ? 'rgba(255, 255, 255, 0.05)' : 'transparent',
+            color: activeTab === 'library' ? 'white' : '#a1a1aa',
+            border: 'none',
+            borderBottom: activeTab === 'library' ? '2px solid white' : '2px solid transparent',
+            fontWeight: 600,
+            cursor: 'pointer',
+            transition: 'all 200ms'
+          }}
+        >
+          Library
+        </button> */}
+        <button
+          onClick={() => setActiveTab('agent')}
+          style={{
+            flex: 1,
+            padding: '16px',
+            backgroundColor: activeTab === 'agent' ? 'rgba(168, 85, 247, 0.1)' : 'transparent',
+            color: activeTab === 'agent' ? '#d8b4fe' : '#a1a1aa',
+            border: 'none',
+            borderBottom: activeTab === 'agent' ? '2px solid #c084fc' : '2px solid transparent',
+            fontWeight: 600,
+            cursor: 'pointer',
+            transition: 'all 200ms',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '8px'
+          }}
+        >
+          <Bot size={16} /> Agent
+        </button>
+        <button
+          onClick={() => setActiveTab('graph')}
+          style={{
+            flex: 1,
+            padding: '16px',
+            backgroundColor: activeTab === 'graph' ? 'rgba(34, 197, 94, 0.1)' : 'transparent',
+            color: activeTab === 'graph' ? '#22c55e' : '#a1a1aa',
+            border: 'none',
+            borderBottom: activeTab === 'graph' ? '2px solid #22c55e' : '2px solid transparent',
+            fontWeight: 600,
+            cursor: 'pointer',
+            transition: 'all 200ms',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '8px'
+          }}
+        >
+          <Network size={16} /> Graph
+        </button>
+      </div>
+
+      {activeTab === 'library' ? (
+        <>
+          {/* UI Controls */}
       <div style={{
         padding: '24px',
         display: 'flex',
@@ -606,7 +785,211 @@ function App() {
             Show {results.length - 5} more memories in Full Screen →
           </button>
         )}
-      </main>
+        </main>
+        </>
+      ) : (
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '0px' }}>
+          {/* Chat History Scroll Area */}
+          <div style={{ flex: 1, overflowY: 'auto', padding: '24px', display: 'flex', flexDirection: 'column', gap: '32px' }}>
+            {chatHistory.length === 0 && (
+              <div style={{ textAlign: 'center', color: '#71717a', marginTop: '40px' }}>
+                <Bot size={48} color="rgba(168, 85, 247, 0.5)" style={{ margin: '0 auto 16px auto' }} />
+                <p>Hello! I am your visual memory agent.</p>
+                <p style={{ fontSize: '14px' }}>Ask me to find specific memories or answer questions based on what you've seen.</p>
+              </div>
+            )}
+            
+            {chatHistory.map((msg) => (
+              <div key={msg.id} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                {/* User Query Bubble */}
+                <div style={{ alignSelf: 'flex-end', backgroundColor: 'rgba(255, 255, 255, 0.1)', padding: '12px 16px', borderRadius: '16px', borderBottomRightRadius: '4px', maxWidth: '80%', color: 'white', fontSize: '15px', lineHeight: 1.5 }}>
+                  {msg.query}
+                </div>
+                
+                {/* Agent Response */}
+                <div style={{ display: 'flex', gap: '12px', maxWidth: '90%' }}>
+                  <div style={{ flexShrink: 0, marginTop: '2px' }}>
+                    <Bot size={24} color="#c084fc" />
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', width: '100%' }}>
+                    {msg.isLoading ? (
+                      <div style={{ color: '#a1a1aa', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '8px', padding: '12px 0' }}>
+                        <Loader2 className="animate-spin" size={16} /> Thinking and searching...
+                      </div>
+                    ) : (
+                      <>
+                        {msg.answer && (
+                          <div className="agent-markdown" style={{ color: '#e9d5ff', fontSize: '15px', lineHeight: 1.7 }}>
+                            <Markdown
+                              components={{
+                                p: ({ children }) => <p style={{ margin: '0 0 12px 0' }}>{children}</p>,
+                                h1: ({ children }) => <h1 style={{ fontSize: '20px', fontWeight: 700, margin: '16px 0 8px 0', color: 'white' }}>{children}</h1>,
+                                h2: ({ children }) => <h2 style={{ fontSize: '18px', fontWeight: 700, margin: '14px 0 6px 0', color: 'white' }}>{children}</h2>,
+                                h3: ({ children }) => <h3 style={{ fontSize: '16px', fontWeight: 600, margin: '12px 0 4px 0', color: 'white' }}>{children}</h3>,
+                                ul: ({ children }) => <ul style={{ margin: '8px 0', paddingLeft: '20px' }}>{children}</ul>,
+                                ol: ({ children }) => <ol style={{ margin: '8px 0', paddingLeft: '20px' }}>{children}</ol>,
+                                li: ({ children }) => <li style={{ margin: '4px 0' }}>{children}</li>,
+                                strong: ({ children }) => <strong style={{ color: 'white', fontWeight: 600 }}>{children}</strong>,
+                                em: ({ children }) => <em style={{ color: '#d8b4fe' }}>{children}</em>,
+                                a: ({ href, children }) => <a href={href} target="_blank" rel="noopener noreferrer" style={{ color: '#a78bfa', textDecoration: 'underline' }}>{children}</a>,
+                                code: ({ children, className }) => {
+                                  const isInline = !className;
+                                  return isInline
+                                    ? <code style={{ backgroundColor: 'rgba(168, 85, 247, 0.2)', padding: '2px 6px', borderRadius: '4px', fontSize: '13px', color: '#d8b4fe' }}>{children}</code>
+                                    : <code className={className} style={{ display: 'block', backgroundColor: 'rgba(0,0,0,0.3)', padding: '12px', borderRadius: '8px', overflowX: 'auto', fontSize: '13px' }}>{children}</code>;
+                                },
+                                pre: ({ children }) => <pre style={{ margin: '8px 0', backgroundColor: 'rgba(0,0,0,0.3)', borderRadius: '8px', overflow: 'auto' }}>{children}</pre>,
+                                img: ({ src, alt }) => (
+                                  <img
+                                    src={src}
+                                    alt={alt || 'Memory image'}
+                                    style={{ maxWidth: '100%', borderRadius: '8px', margin: '8px 0', border: '1px solid rgba(255,255,255,0.1)' }}
+                                    onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                                  />
+                                ),
+                              }}
+                            >
+                              {msg.answer}
+                            </Markdown>
+                          </div>
+                        )}
+                        {msg.results && msg.results.length > 0 && (
+                          <div style={{ display: 'grid', gridTemplateColumns: isFullScreen ? 'repeat(auto-fit, minmax(280px, 1fr))' : '1fr', gap: '16px' }}>
+                            {msg.results.map((r, i) => (
+                              <ResultCard key={r.id} item={r} index={i} />
+                            ))}
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Input Area (Bottom) */}
+          <div style={{ padding: '24px', borderTop: '1px solid rgba(255, 255, 255, 0.05)', backgroundColor: 'rgba(0,0,0,0.2)' }}>
+            <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+              {/* Connect Tools Button */}
+              <div ref={connectMenuRef} style={{ position: 'absolute', left: '8px', zIndex: 10 }}>
+                <button
+                   title="Connect tools"
+                   onClick={() => setShowConnectMenu(!showConnectMenu)}
+                   style={{
+                     display: 'flex',
+                     alignItems: 'center',
+                     justifyContent: 'center',
+                     width: '32px',
+                     height: '32px',
+                     borderRadius: '8px',
+                     backgroundColor: gmailConnected ? 'rgba(34, 197, 94, 0.1)' : 'rgba(255, 255, 255, 0.05)',
+                     border: `1px solid ${gmailConnected ? 'rgba(34, 197, 94, 0.3)' : 'rgba(255, 255, 255, 0.1)'}`,
+                     color: gmailConnected ? '#22c55e' : '#a1a1aa',
+                     cursor: 'pointer',
+                     transition: 'all 200ms'
+                   }}
+                   onMouseOver={(e) => { e.currentTarget.style.backgroundColor = gmailConnected ? 'rgba(34, 197, 94, 0.2)' : 'rgba(255, 255, 255, 0.1)'; e.currentTarget.style.color = 'white' }}
+                   onMouseOut={(e) => { e.currentTarget.style.backgroundColor = gmailConnected ? 'rgba(34, 197, 94, 0.1)' : 'rgba(255, 255, 255, 0.05)'; e.currentTarget.style.color = gmailConnected ? '#22c55e' : '#a1a1aa' }}
+                >
+                  <Plus size={16} />
+                </button>
+
+                {/* Dropdown Menu */}
+                {showConnectMenu && (
+                  <div style={{
+                    position: 'absolute',
+                    bottom: '40px',
+                    left: 0,
+                    backgroundColor: '#18181b',
+                    border: '1px solid rgba(255, 255, 255, 0.1)',
+                    borderRadius: '12px',
+                    padding: '8px',
+                    minWidth: '200px',
+                    boxShadow: '0 20px 40px -10px rgba(0, 0, 0, 0.5)',
+                  }}>
+                    <div style={{ padding: '8px 12px', fontSize: '11px', color: '#71717a', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                      Connectors
+                    </div>
+
+                    {/* Gmail Connector */}
+                    <button
+                      onClick={gmailConnected ? handleDisconnectGmail : handleConnectGmail}
+                      disabled={gmailLoading}
+                      style={{
+                        width: '100%',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '10px',
+                        padding: '10px 12px',
+                        backgroundColor: 'transparent',
+                        border: 'none',
+                        borderRadius: '8px',
+                        color: 'white',
+                        cursor: gmailLoading ? 'not-allowed' : 'pointer',
+                        transition: 'background-color 200ms',
+                        opacity: gmailLoading ? 0.6 : 1,
+                      }}
+                      onMouseOver={(e) => { if (!gmailLoading) e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.05)' }}
+                      onMouseOut={(e) => { e.currentTarget.style.backgroundColor = 'transparent' }}
+                    >
+                      <Mail size={16} color={gmailConnected ? '#22c55e' : '#a1a1aa'} />
+                      <div style={{ textAlign: 'left', flex: 1 }}>
+                        <div style={{ fontSize: '13px', fontWeight: 600 }}>Gmail</div>
+                        <div style={{ fontSize: '11px', color: '#71717a' }}>
+                          {gmailConnected ? 'Connected' : gmailLoading ? 'Connecting...' : 'Search & send emails'}
+                        </div>
+                      </div>
+                      {gmailConnected && <Unlink size={14} color="#71717a" />}
+                    </button>
+
+                    <div style={{ height: '1px', backgroundColor: 'rgba(255, 255, 255, 0.06)', margin: '4px 8px' }} />
+
+                    <div style={{ padding: '8px 12px', fontSize: '11px', color: '#52525b', lineHeight: 1.4 }}>
+                      Connect tools to let your agent search across apps.
+                    </div>
+                  </div>
+                )}
+              </div>
+              <input
+                type="text"
+                placeholder="Ask your agent to perform tasks or find memories..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+                style={{
+                  width: '100%',
+                  backgroundColor: 'rgba(168, 85, 247, 0.05)',
+                  border: '1px solid rgba(168, 85, 247, 0.2)',
+                  borderRadius: '12px',
+                  padding: '16px 16px 16px 48px',
+                  color: 'white',
+                  fontSize: '15px',
+                  boxShadow: 'inset 0 2px 4px 0 rgba(0, 0, 0, 0.1)',
+                  transition: 'all 200ms',
+                  boxSizing: 'border-box'
+                }}
+                onFocus={(e) => {
+                  e.currentTarget.style.borderColor = 'rgba(168, 85, 247, 0.5)';
+                  e.currentTarget.style.backgroundColor = 'rgba(168, 85, 247, 0.1)';
+                  e.currentTarget.style.boxShadow = '0 0 0 4px rgba(168, 85, 247, 0.15)';
+                }}
+                onBlur={(e) => {
+                  e.currentTarget.style.borderColor = 'rgba(168, 85, 247, 0.2)';
+                  e.currentTarget.style.backgroundColor = 'rgba(168, 85, 247, 0.05)';
+                  e.currentTarget.style.boxShadow = 'inset 0 2px 4px 0 rgba(0, 0, 0, 0.06)';
+                }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'graph' && (
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: '550px' }}>
+          <GraphView userId={user.uid} isFullScreen={isFullScreen} />
+        </div>
+      )}
 
       {/* Footer (Full Screen only) */}
       {isFullScreen && (
